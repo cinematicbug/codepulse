@@ -1,5 +1,20 @@
 import { useState } from 'react';
 
+const QUICK_FIX_PRESETS = [
+  {
+    label: 'Sliding Window O(N)',
+    message: 'Your nested loop is over the 400 ms SLA. Use a sliding window: keep a running windowSum and advance left while windowSum > K.'
+  },
+  {
+    label: 'Check <= K Boundary',
+    message: 'Output differs from the reference. Check the boundary when shrinking the window and the length formula right - left + 1.'
+  },
+  {
+    label: 'Fix C++17 Syntax',
+    message: 'Build failed. Read the first compiler error line, check variable declarations (long long), and fix it before submitting.'
+  }
+];
+
 export default function CodeDrawer({
   student,
   onClose,
@@ -14,6 +29,20 @@ export default function CodeDrawer({
   const outputPass = Boolean(student.passedTests);
   const slaPass = Boolean(student.compileSuccess && !student.timedOut && student.runtimeMs <= 400);
   const effortPass = Boolean(student.proofHash);
+
+  // Visual 400ms SLA Latency Bar calculation
+  let slaBarWidth = '100%';
+  let slaBarColor = 'bg-rose-500';
+  if (!student.compileSuccess) {
+    slaBarWidth = '100%';
+    slaBarColor = 'bg-amber-500/70';
+  } else if (student.runtimeMs <= 400 && !student.timedOut) {
+    slaBarWidth = `${Math.max(8, Math.round(((student.runtimeMs ?? 0) / 400) * 100))}%`;
+    slaBarColor = 'bg-emerald-400';
+  } else {
+    slaBarWidth = '100%';
+    slaBarColor = 'bg-rose-500';
+  }
 
   const handleCopyLog = async () => {
     const editIters = student.editIterations ?? 1;
@@ -136,14 +165,23 @@ export default function CodeDrawer({
                 <div className={`p-3 rounded-xl border flex flex-col justify-between ${
                   slaPass ? 'bg-emerald-950/30 border-emerald-800/60' : 'bg-rose-950/30 border-rose-800/60'
                 }`}>
-                  <span className="text-xs font-semibold text-slate-300">Within SLA</span>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={`text-sm font-bold ${slaPass ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {slaPass ? 'Pass' : 'Fail'}
-                    </span>
-                    <span className="text-xs font-mono text-slate-400 font-semibold">
-                      {student.runtimeMs ?? 0} ms
-                    </span>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-300">Within SLA</span>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className={`text-sm font-bold ${slaPass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {slaPass ? 'Pass' : 'Fail'}
+                      </span>
+                      <span className="text-xs font-mono text-slate-400 font-semibold">
+                        {student.runtimeMs ?? 0} ms
+                      </span>
+                    </div>
+                  </div>
+                  {/* Visual 400ms SLA Latency Bar */}
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden mt-2">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${slaBarColor}`}
+                      style={{ width: slaBarWidth }}
+                    />
                   </div>
                 </div>
 
@@ -222,11 +260,29 @@ export default function CodeDrawer({
             </div>
 
             {/* (e) 1-on-1 Direct Fix sender */}
-            <div className="pt-2 border-t border-slate-800">
-              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                1-on-1 Direct Fix
-              </h3>
-              <form onSubmit={handleSendFix} className="flex gap-2">
+            <div className="pt-2 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  1-on-1 Direct Fix
+                </h3>
+              </div>
+
+              {/* Quick 1-on-1 Fix Preset Chips */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-500 mr-0.5">Presets:</span>
+                {QUICK_FIX_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setDirectFixMessage(preset.message)}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-750 text-indigo-300 hover:text-white border border-slate-700/80 hover:border-indigo-500 transition-colors cursor-pointer"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <form onSubmit={handleSendFix} className="flex gap-2 pt-1">
                 <input
                   type="text"
                   value={directFixMessage}

@@ -47,6 +47,20 @@ export default function StudentGrid({
             ? 'TLE >1500ms'
             : `${student.runtimeMs ?? 0} ms`;
 
+          // Visual 400ms SLA Latency Bar
+          let slaBarWidth = '100%';
+          let slaBarColor = 'bg-rose-500';
+          if (!student.compileSuccess) {
+            slaBarWidth = '100%';
+            slaBarColor = 'bg-amber-500/70';
+          } else if (student.runtimeMs <= 400 && !student.timedOut) {
+            slaBarWidth = `${Math.max(8, Math.round(((student.runtimeMs ?? 0) / 400) * 100))}%`;
+            slaBarColor = 'bg-emerald-400';
+          } else {
+            slaBarWidth = '100%';
+            slaBarColor = 'bg-rose-500';
+          }
+
           return (
             <div
               key={student.studentId}
@@ -98,6 +112,17 @@ export default function StudentGrid({
                     Rejection risk
                   </span>
                 )}
+              </div>
+
+              {/* Visual 400ms SLA Latency Bar */}
+              <div
+                className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden"
+                title={`Runtime: ${student.runtimeMs}ms (SLA 400ms)`}
+              >
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${slaBarColor}`}
+                  style={{ width: slaBarWidth }}
+                />
               </div>
 
               {/* Metrics row */}
