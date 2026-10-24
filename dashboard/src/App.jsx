@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import ClusterBar from './components/ClusterBar';
+import StudentGrid from './components/StudentGrid';
+import CodeDrawer from './components/CodeDrawer';
+
+const TASK_RATE_USD = 18.5;
+const BATCH_LABEL = 'RLHF-IND-101';
 
 const INITIAL_ROOM_STATE = {
   roomId: 'CU-DSA-101',
@@ -8,16 +13,17 @@ const INITIAL_ROOM_STATE = {
   simulatedCount: 0,
   students: [],
   clusters: {
-    QUADRATIC_TLE: { count: 0, label: 'O(N^2) Bottleneck (>400ms / TLE)' },
-    COMPILE_ERROR: { count: 0, label: 'Compile / Syntax Error' },
-    WRONG_ANSWER: { count: 0, label: 'Wrong Output / Logic Bug' },
-    OPTIMAL_ON: { count: 0, label: 'Optimal O(N) (<=400ms)' }
+    QUADRATIC_TLE: { count: 0, label: 'Over SLA: O(N^2) (>400ms)' },
+    COMPILE_ERROR: { count: 0, label: 'Build Failure (Rejection Risk)' },
+    WRONG_ANSWER: { count: 0, label: 'Output Mismatch (Rejection Risk)' },
+    OPTIMAL_ON: { count: 0, label: 'Pre-Flight Passed' }
   }
 };
 
 export default function App() {
   const [roomState, setRoomState] = useState(INITIAL_ROOM_STATE);
   const [selectedCluster, setSelectedCluster] = useState(null);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [recentlyFlipped, setRecentlyFlipped] = useState({});
   const [connected, setConnected] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
@@ -52,6 +58,16 @@ export default function App() {
           const prevCluster = prevMap.get(student.studentId);
           if (prevCluster && prevCluster !== 'OPTIMAL_ON' && student.clusterId === 'OPTIMAL_ON') {
             newlyFlipped[student.studentId] = true;
+
+            // Auto-clear after 2500ms
+            setTimeout(() => {
+              setRecentlyFlipped((prev) => {
+                if (!prev[student.studentId]) return prev;
+                const updated = { ...prev };
+                delete updated[student.studentId];
+                return updated;
+              });
+            }, 2500);
           }
         }
       }
@@ -74,14 +90,14 @@ export default function App() {
     setRecentlyFlipped({});
   };
 
-  const handleSendHint = (hintMessage) => {
-    if (!hintMessage || !selectedCluster) return;
+  const handleSendHint = ({ targetClusterId = null, targetStudentId = null, hintMessage }) => {
+    if (!hintMessage || !hintMessage.trim()) return;
 
     socketRef.current?.emit('send_hint', {
       roomId: 'CU-DSA-101',
-      targetClusterId: selectedCluster,
-      targetStudentId: null,
-      hintMessage
+      targetClusterId,
+      targetStudentId,
+      hintMessage: hintMessage.trim()
     });
 
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -91,10 +107,24 @@ export default function App() {
     }, 2500);
   };
 
+  // Live derivation of selected student so open drawer updates in real time
+  const selectedStudent = (roomState.students || []).find(
+    (s) => s.studentId === selectedStudentId
+  ) || null;
+
   const { liveCount = 0, simulatedCount = 0, clusters } = roomState;
   const totalOnline = (liveCount + simulatedCount) || 0;
   const optimalCount = clusters?.OPTIMAL_ON?.count ?? 0;
   const pct = totalOnline > 0 ? Math.round((optimalCount / totalOnline) * 100) : 0;
+
+  const passingCount = optimalCount;
+  const passingUSD = (passingCount * TASK_RATE_USD).toFixed(2);
+
+  const rejectionCount =
+    (clusters?.COMPILE_ERROR?.count ?? 0) +
+    (clusters?.WRONG_ANSWER?.count ?? 0) +
+    (clusters?.QUADRATIC_TLE?.count ?? 0);
+  const rejectionUSD = (rejectionCount * TASK_RATE_USD).toFixed(2);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans p-6 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -109,50 +139,70 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
-        <div className="space-y-2">
+      <header className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 border-b border-slate-800/80 pb-6">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
-              CodePulse · Real-Time Lab Telemetry
+              CodePulse
             </h1>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs md:text-sm font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-800/60">
-              CU-DSA-101 · Sliding Window Lab
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs md:text-sm font-bold bg-indigo-950/90 text-indigo-300 border border-indigo-700/60 uppercase tracking-wider">
+              GIG WORKER PRE-FLIGHT
             </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
             {/* Connection dot */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-1">
               <span
-                className={`inline-block w-3 h-3 rounded-full ${
+                className={`inline-block w-2.5 h-2.5 rounded-full ${
                   connected
                     ? 'bg-emerald-400 ring-4 ring-emerald-400/20'
                     : 'bg-rose-500 ring-4 ring-rose-500/20'
                 }`}
               />
-              <span className="text-xs md:text-sm font-semibold text-slate-400">
-                {connected ? 'Socket Connected' : 'Connecting to port 4000...'}
+              <span className="text-xs font-semibold text-slate-400">
+                {connected ? 'Live Stream' : 'Connecting...'}
               </span>
             </div>
-            <span className="text-slate-600">|</span>
-            {/* Honest pill */}
-            <div className="px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs md:text-sm font-medium">
-              <span className="text-emerald-400 font-bold">{liveCount}</span> live IDE ·{' '}
+          </div>
+
+          <p className="text-sm md:text-base text-slate-300 font-medium">
+            Pre-submission checks and effort log for task-based freelancers - Batch {BATCH_LABEL}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            {/* Live / Simulated pill */}
+            <div className="px-3.5 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs md:text-sm font-medium">
+              <span className="text-cyan-400 font-bold">{liveCount}</span> live IDE ·{' '}
               <span className="text-indigo-400 font-bold">{simulatedCount}</span> simulated classroom nodes
             </div>
+
+            {/* Passing pre-flight pill */}
+            <div className="px-3.5 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-300 text-xs md:text-sm font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              Passing pre-flight: {passingCount} tasks (${passingUSD})
+            </div>
+
+            {/* Rejection risk pill */}
+            <div className="px-3.5 py-1.5 rounded-full bg-rose-950/80 border border-rose-800/60 text-rose-300 text-xs md:text-sm font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-400" />
+              Rejection risk: {rejectionCount} tasks (${rejectionUSD})
+            </div>
           </div>
+
+          <p className="text-[11px] text-slate-500 italic">
+            Illustrative demo rate: $18.50 per task
+          </p>
         </div>
 
-        {/* % Optimal O(N) Progress Bar */}
-        <div className="w-full lg:w-96 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-center gap-2">
+        {/* Pass rate progress bar */}
+        <div className="w-full lg:w-80 bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-center gap-2 shrink-0">
           <div className="flex items-center justify-between">
-            <span className="text-sm md:text-base font-bold text-slate-300">
-              % Optimal O(N)
+            <span className="text-xs md:text-sm font-bold text-slate-300 uppercase tracking-wider">
+              Pre-Flight Pass Rate
             </span>
             <span className="text-2xl md:text-3xl font-black text-emerald-400">
               {pct}%
             </span>
           </div>
-          <div className="w-full bg-slate-950 rounded-full h-3.5 overflow-hidden border border-slate-800/90">
+          <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
             <div
               className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full rounded-full transition-all duration-500 ease-out"
               style={{ width: `${pct}%` }}
@@ -161,7 +211,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ClusterBar component */}
+      {/* ClusterBar Component */}
       <ClusterBar
         clusters={clusters}
         totalOnline={totalOnline}
@@ -170,8 +220,20 @@ export default function App() {
         onSendHint={handleSendHint}
       />
 
-      {/* Slot for student grid for the next prompt */}
-      <div id="student-grid-slot"></div>
+      {/* StudentGrid Component */}
+      <StudentGrid
+        students={roomState.students || []}
+        selectedCluster={selectedCluster}
+        recentlyFlipped={recentlyFlipped}
+        onSelectStudent={(studentId) => setSelectedStudentId(studentId)}
+      />
+
+      {/* CodeDrawer Component */}
+      <CodeDrawer
+        student={selectedStudent}
+        onClose={() => setSelectedStudentId(null)}
+        onSendHint={handleSendHint}
+      />
     </div>
   );
 }

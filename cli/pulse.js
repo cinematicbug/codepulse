@@ -1,6 +1,7 @@
 const util = require('util');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { performance } = require('perf_hooks');
 const chalk = require('chalk');
@@ -8,6 +9,8 @@ const chokidar = require('chokidar');
 const io = require('socket.io-client');
 
 const execFileAsync = util.promisify(execFile);
+
+let runCount = 0, prevHash = 'GENESIS';
 
 function getArg(flag, defaultValue) {
   for (let i = 2; i < process.argv.length; i++) {
@@ -258,6 +261,10 @@ async function executeRun() {
   }
 
   // 6d: Single emit point
+  runCount += 1;
+  const proofHash = 'log_' + crypto.createHash('sha256').update(prevHash + ':' + studentId + ':' + runCount + ':' + code.length + ':' + Math.round(runtimeMs)).digest('hex').slice(0, 12);
+  prevHash = proofHash;
+
   const payload = {
     roomId,
     studentId,
@@ -270,6 +277,7 @@ async function executeRun() {
     timedOut,
     passedTests,
     loopDepth,
+    proofHash,
     timestamp: Date.now()
   };
 
@@ -279,6 +287,8 @@ async function executeRun() {
 
   console.log(chalk.cyan('┌────────────────────────────────────────────────────────┐'));
   console.log(`│ Status : ${formatCluster(currentClusterId)}`);
+  console.log('│ Pre-flight: ' + (currentClusterId === 'OPTIMAL_ON' ? chalk.green.bold('PASSED') : chalk.red.bold('REJECTION RISK')));
+  console.log('│ Effort log: ' + proofHash + ' (run #' + runCount + ')');
   console.log(`│ Time   : ${payload.runtimeMs}ms | loopDepth: ${loopDepth}`);
   console.log(`│ Tests  : ${passedTests ? chalk.green('PASS') : chalk.red('FAIL')} | timedOut: ${timedOut}`);
   if (compilerError) {
@@ -358,7 +368,7 @@ socket.on('instructor_hint', (payload) => {
   if (isMatch) {
     const message = payload.hintMessage || '';
     const lines = wrapText(message, 54);
-    console.log('\n' + chalk.cyan.bold('┌─ INSTRUCTOR HINT ' + '─'.repeat(38) + '┐'));
+    console.log('\n' + chalk.cyan.bold('┌─ SQUAD LEAD FIX ' + '─'.repeat(39) + '┐'));
     for (const line of lines) {
       console.log(chalk.cyan.bold('│ ') + chalk.whiteBright(line.padEnd(54, ' ')) + chalk.cyan.bold(' │'));
     }

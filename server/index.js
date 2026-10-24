@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 
 const app = express();
@@ -14,10 +15,10 @@ const io = new Server(server, {
 });
 
 const CLUSTER_LABELS = {
-  COMPILE_ERROR: 'Compile / Syntax Error',
-  WRONG_ANSWER: 'Wrong Output / Logic Bug',
-  QUADRATIC_TLE: 'O(N^2) Bottleneck (>400ms / TLE)',
-  OPTIMAL_ON: 'Optimal O(N) (<=400ms)'
+  COMPILE_ERROR: 'Build Failure (Rejection Risk)',
+  WRONG_ANSWER: 'Output Mismatch (Rejection Risk)',
+  QUADRATIC_TLE: 'Over SLA: O(N^2) (>400ms)',
+  OPTIMAL_ON: 'Pre-Flight Passed'
 };
 
 // State: rooms = Map<roomId, Map<studentId, record>>
@@ -132,6 +133,9 @@ io.on('connection', (socket) => {
     const room = getOrCreateRoom(payload.roomId);
     const prevRecord = room.get(payload.studentId);
 
+    const editIterations = !prevRecord ? 1 : (payload.code !== prevRecord.code ? (prevRecord.editIterations || 1) + 1 : (prevRecord.editIterations || 1));
+    const proofHash = payload.proofHash || ('log_' + crypto.createHash('sha256').update(payload.studentId + ':' + (payload.code || '') + ':' + editIterations).digest('hex').slice(0, 12));
+
     const clusterId = classify(payload);
     const highConfidenceQuadratic = clusterId === 'QUADRATIC_TLE' && Boolean(payload.loopDepth >= 2);
 
@@ -152,6 +156,8 @@ io.on('connection', (socket) => {
       clusterId,
       errorStreak,
       highConfidenceQuadratic,
+      editIterations,
+      proofHash,
       online: true,
       socketId: socket.id
     };

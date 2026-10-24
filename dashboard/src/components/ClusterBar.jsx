@@ -3,7 +3,7 @@ import { useState } from 'react';
 const CLUSTERS_CONFIG = [
   {
     id: 'QUADRATIC_TLE',
-    label: 'O(N^2) Bottleneck (>400ms / TLE)',
+    label: 'Over SLA: O(N^2) (>400ms)',
     color: 'rose',
     bg: 'bg-rose-950/30',
     border: 'border-rose-900/60',
@@ -14,7 +14,7 @@ const CLUSTERS_CONFIG = [
   },
   {
     id: 'COMPILE_ERROR',
-    label: 'Compile / Syntax Error',
+    label: 'Build Failure (Rejection Risk)',
     color: 'amber',
     bg: 'bg-amber-950/30',
     border: 'border-amber-900/60',
@@ -25,7 +25,7 @@ const CLUSTERS_CONFIG = [
   },
   {
     id: 'WRONG_ANSWER',
-    label: 'Wrong Output / Logic Bug',
+    label: 'Output Mismatch (Rejection Risk)',
     color: 'orange',
     bg: 'bg-orange-950/30',
     border: 'border-orange-900/60',
@@ -36,7 +36,7 @@ const CLUSTERS_CONFIG = [
   },
   {
     id: 'OPTIMAL_ON',
-    label: 'Optimal O(N) (<=400ms)',
+    label: 'Pre-Flight Passed',
     color: 'emerald',
     bg: 'bg-emerald-950/30',
     border: 'border-emerald-900/60',
@@ -52,46 +52,46 @@ const HINT_PRESETS = {
     {
       label: 'Broadcast Sliding Window Hint',
       hintMessage:
-        'Use a two-pointer sliding window: maintain a running windowSum and advance your left pointer when windowSum > K so each element is visited at most twice in O(N) time.'
+        'Your nested loop is over the 400 ms SLA. Use a sliding window: keep a running windowSum and advance left while windowSum > K.'
     },
     {
       label: 'Shrink Window From Left',
       hintMessage:
-        'Avoid resetting j = i on every outer iteration; subtract arr[left] and increment left inside a while (windowSum > K) loop.'
+        'Avoid resetting the inner loop on every outer iteration; subtract arr[left] and increment left inside a while (windowSum > K) loop.'
     },
     {
       label: 'Avoid Full Pairwise Scan',
       hintMessage:
-        'Your nested loop scans all N*(N-1)/2 subarrays. Since all array elements are positive, the window sum is monotonic.'
+        'A nested loop scans all pairwise subarrays. Since all array elements are positive, the window sum is monotonic.'
     }
   ],
   COMPILE_ERROR: [
     {
-      label: 'Check First g++ Error Line',
+      label: 'Fix Compiler Error',
       hintMessage:
-        'Check the very first compiler error line in your terminal: verify missing semicolons, matching braces, and that windowSum is declared before use.'
+        'Build failed. Read the first compiler error line and fix it before submitting.'
     },
     {
-      label: 'Verify Variable Types & Scope',
+      label: 'Verify Variable Declarations',
       hintMessage:
-        'Ensure windowSum is declared as long long outside the loop and all loop variables are in scope before return.'
+        'Ensure windowSum is declared as long long outside the loop and all variables are in scope before return.'
     },
     {
-      label: 'Check Vector & Header Syntax',
+      label: 'Check Semicolons & Syntax',
       hintMessage:
-        'Check that vector<int> syntax and closing parentheses match before the return statement.'
+        'Check matching braces and semicolons before the return statement.'
     }
   ],
   WRONG_ANSWER: [
     {
+      label: 'Check Window Boundaries',
+      hintMessage:
+        'Output differs from the reference. Check the boundary when shrinking the window and the length formula right - left + 1.'
+    },
+    {
       label: 'Check Window Shrink Condition',
       hintMessage:
         'Check your boundary condition: shrink the window while (windowSum > K && left <= right) before updating best = max(best, right - left + 1).'
-    },
-    {
-      label: 'Fix Off-By-One Length Formula',
-      hintMessage:
-        'The length of the current valid window [left..right] is (right - left + 1), not (right - left).'
     },
     {
       label: 'Use 64-Bit Sum (long long)',
@@ -117,10 +117,19 @@ export default function ClusterBar({
     ? (clusters?.[selectedCluster]?.label ?? selectedConfig?.label ?? selectedCluster)
     : '';
 
+  const emitHint = (hintMessage) => {
+    if (!onSendHint || !hintMessage) return;
+    onSendHint({
+      targetClusterId: selectedCluster,
+      targetStudentId: null,
+      hintMessage
+    });
+  };
+
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     if (!customHint.trim()) return;
-    onSendHint(customHint.trim());
+    emitHint(customHint.trim());
     setCustomHint('');
   };
 
@@ -132,23 +141,38 @@ export default function ClusterBar({
           const count = clusters?.[cfg.id]?.count ?? 0;
           const pct = totalOnline > 0 ? Math.round((count / totalOnline) * 100) : 0;
           const isSelected = selectedCluster === cfg.id;
+          const dollarText =
+            cfg.id === 'OPTIMAL_ON'
+              ? `+$${(count * 18.5).toFixed(2)} passing`
+              : `$${(count * 18.5).toFixed(2)} at risk`;
 
           return (
             <button
               key={cfg.id}
               type="button"
               onClick={() => onSelectCluster(isSelected ? null : cfg.id)}
-              className={`text-left rounded-2xl p-5 border transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[140px] ${
+              className={`text-left rounded-2xl p-5 border transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[145px] ${
                 cfg.bg
               } ${isSelected ? cfg.ring : `${cfg.border} ${cfg.hover}`}`}
             >
-              <div className="flex items-center justify-between w-full">
+              <div className="flex items-start justify-between w-full">
                 <span className={`text-4xl md:text-5xl font-black tracking-tight ${cfg.textColor}`}>
                   {count}
                 </span>
-                <span className={`text-sm md:text-base font-bold px-3 py-1 rounded-full ${cfg.badgeBg}`}>
-                  {pct}%
-                </span>
+                <div className="flex flex-col items-end gap-1.5">
+                  <span className={`text-xs md:text-sm font-bold px-2.5 py-0.5 rounded-full ${cfg.badgeBg}`}>
+                    {pct}%
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                      cfg.id === 'OPTIMAL_ON'
+                        ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-800/60'
+                        : 'bg-rose-950/90 text-rose-300 border border-rose-800/60'
+                    }`}
+                  >
+                    {dollarText}
+                  </span>
+                </div>
               </div>
               <div className="mt-4">
                 <div className="text-base md:text-lg font-bold text-slate-100 leading-snug">
@@ -186,7 +210,7 @@ export default function ClusterBar({
               <button
                 key={idx}
                 type="button"
-                onClick={() => onSendHint(preset.hintMessage)}
+                onClick={() => emitHint(preset.hintMessage)}
                 className="text-left rounded-xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 p-4 transition-all duration-150 cursor-pointer group flex flex-col justify-between"
               >
                 <div>
