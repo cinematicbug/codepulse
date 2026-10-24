@@ -43,3 +43,15 @@ instructor_hint (server -> room): same fields + sentAt (ms epoch).
 Hint matching (CLI): show if (targetStudentId == null && targetClusterId === own cluster) || targetStudentId === own studentId.
  
 Simulator: flips only simulated students and never emits for stu_live_1.
+
+## v9 additive section (gig-worker pre-flight). APPENDED: nothing above this line changes.
+- The wire is unchanged: room CU-DSA-101, all event names, all four cluster IDs, the 5-step classifier, sorting, room scoping, hint matching and the errorStreak rule.
+- Display-only cluster labels: COMPILE_ERROR 'Build Failure (Rejection Risk)'; WRONG_ANSWER 'Output Mismatch (Rejection Risk)'; QUADRATIC_TLE 'Over SLA: O(N^2) (>400ms)'; OPTIMAL_ON 'Pre-Flight Passed'.
+- code_update gains one OPTIONAL field: proofHash (string). The CLI sends it; the simulator does not.
+- Each student record in room_state gains two server-computed fields:
+  editIterations: integer. 1 on first submission, +1 each time code differs from that student's previous submission, never reset.
+  proofHash: payload.proofHash if present, else 'log_' + first 12 hex chars of sha256(studentId + ':' + code + ':' + editIterations).
+- Effort log chain (CLI side): prevHash starts as 'GENESIS'. Each run: hash = 'log_' + first 12 hex chars of sha256(prevHash + ':' + studentId + ':' + runCount + ':' + code.length + ':' + round(runtimeMs)); then prevHash = hash. It is self-generated and unsigned. It is NOT independent proof of authorship.
+- Dashboard-only constants (never sent on the wire): TASK_RATE_USD = 18.5 (illustrative), BATCH_LABEL = 'RLHF-IND-101'.
+- No new events. The server computes no money.
+
