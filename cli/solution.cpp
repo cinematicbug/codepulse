@@ -32,7 +32,7 @@ int solve(const vector<int>& arr, long long K) {
     for (int right = 0; right < n; ++right) {
         windowSum += arr[right];
         while (windowSum > K && left <= right) windowSum -= arr[left++];
-        best = max(best, right - left + 1);
+        best = max(best, right - left + 1)
     }
     return best;
 }

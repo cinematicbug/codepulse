@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { analyzeWorkerCodeWithAI } from '../utils/geminiAi';
 
 const QUICK_FIX_PRESETS = [
   {
@@ -18,10 +19,53 @@ const QUICK_FIX_PRESETS = [
 export default function CodeDrawer({
   student,
   onClose,
-  onSendHint
+  onSendHint,
+  onSendDirectHint
 }) {
   const [copied, setCopied] = useState(false);
   const [directFixMessage, setDirectFixMessage] = useState('');
+  const [aiResult, setAiResult] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
+
+  // Visual 400ms SLA Latency Bar calculation
+  let slaBarWidth = '100%';
+  let slaBarColor = 'bg-rose-500';
+  if (student) {
+    if (!student.compileSuccess) {
+      slaBarWidth = '100%';
+      slaBarColor = 'bg-amber-500/70';
+    } else if (student.runtimeMs <= 400 && !student.timedOut) {
+      slaBarWidth = `${Math.max(8, Math.round(((student.runtimeMs ?? 0) / 400) * 100))}%`;
+      slaBarColor = 'bg-emerald-400';
+    } else {
+      slaBarWidth = '100%';
+      slaBarColor = 'bg-rose-500';
+    }
+  }
+
+  const handleRunAudit = async (targetStudent = student) => {
+    if (!targetStudent) return;
+    setAnalyzing(true);
+    try {
+      const result = await analyzeWorkerCodeWithAI(targetStudent);
+      setAiResult(result);
+    } catch (err) {
+      console.error('Gemini Audit failed:', err);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (student) {
+      if (autoAnalyze) {
+        handleRunAudit(student);
+      } else {
+        setAiResult(null);
+      }
+    }
+  }, [student?.studentId, autoAnalyze]);
 
   if (!student) return null;
 
@@ -29,20 +73,6 @@ export default function CodeDrawer({
   const outputPass = Boolean(student.passedTests);
   const slaPass = Boolean(student.compileSuccess && !student.timedOut && student.runtimeMs <= 400);
   const effortPass = Boolean(student.proofHash);
-
-  // Visual 400ms SLA Latency Bar calculation
-  let slaBarWidth = '100%';
-  let slaBarColor = 'bg-rose-500';
-  if (!student.compileSuccess) {
-    slaBarWidth = '100%';
-    slaBarColor = 'bg-amber-500/70';
-  } else if (student.runtimeMs <= 400 && !student.timedOut) {
-    slaBarWidth = `${Math.max(8, Math.round(((student.runtimeMs ?? 0) / 400) * 100))}%`;
-    slaBarColor = 'bg-emerald-400';
-  } else {
-    slaBarWidth = '100%';
-    slaBarColor = 'bg-rose-500';
-  }
 
   const handleCopyLog = async () => {
     const editIters = student.editIterations ?? 1;
@@ -77,6 +107,19 @@ export default function CodeDrawer({
       });
     }
     setDirectFixMessage('');
+  };
+
+  const handleSendAiFix = () => {
+    if (!aiResult?.suggestedHint) return;
+    if (typeof onSendDirectHint === 'function') {
+      onSendDirectHint(student.studentId, aiResult.suggestedHint);
+    } else if (typeof onSendHint === 'function') {
+      onSendHint({
+        targetClusterId: null,
+        targetStudentId: student.studentId,
+        hintMessage: aiResult.suggestedHint
+      });
+    }
   };
 
   return (
@@ -230,6 +273,119 @@ export default function CodeDrawer({
                   <span className="text-emerald-400 font-bold">{student.editIterations ?? 1}</span>
                 </div>
               </div>
+            </div>
+
+            {/* AI Pre-Flight Code Auditor Card */}
+            <div className="rounded-xl bg-slate-950/90 border border-indigo-900/60 p-4 space-y-3 shadow-lg relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">✨</span>
+                  <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                    AI Pre-Flight Code Auditor
+                  </h3>
+                  {aiResult && (
+                    <span
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                        aiResult.mode === 'gemini-live'
+                          ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border-cyan-500/50'
+                          : 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'
+                      }`}
+                    >
+                      {aiResult.mode === 'gemini-live' ? 'GEMINI 2.5 FLASH LIVE' : 'LOCAL AST ENGINE'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <label className="text-[11px] text-slate-400 flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoAnalyze}
+                      onChange={(e) => setAutoAnalyze(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0 cursor-pointer"
+                    />
+                    Auto-analyze
+                  </label>
+
+                  <button
+                    type="button"
+                    disabled={analyzing}
+                    onClick={() => handleRunAudit(student)}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  >
+                    {analyzing ? (
+                      <>
+                        <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Auditing...
+                      </>
+                    ) : (
+                      '✨ Analyze Code with Gemini AI'
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {analyzing && (
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-center gap-3 text-xs text-indigo-300 animate-pulse font-medium">
+                  <span className="inline-block w-4 h-4 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+                  Analyzing AST & SLA telemetry with Gemini...
+                </div>
+              )}
+
+              {!analyzing && aiResult && (
+                <div className="space-y-3 pt-1">
+                  {/* Root Cause */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Root Cause Diagnosis
+                    </span>
+                    <p className="text-xs text-slate-200 leading-relaxed bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                      {aiResult.rootCause}
+                    </p>
+                  </div>
+
+                  {/* Exact Code Reference & QA Rejection Risk */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Exact Code Reference
+                      </span>
+                      <pre className="text-xs font-mono bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 text-amber-300 overflow-x-auto whitespace-pre-wrap">
+                        {aiResult.lineReference}
+                      </pre>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Automated QA Risk
+                      </span>
+                      <p className="text-xs text-rose-300 bg-rose-950/40 border border-rose-900/60 p-2.5 rounded-lg leading-relaxed">
+                        {aiResult.rejectionReason}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Suggested Fix + 1-Click Send Button */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/60 via-slate-900 to-indigo-950/60 border border-indigo-700/60 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
+                        AI-Generated Remediation Hint
+                      </span>
+                    </div>
+                    <p className="text-xs text-indigo-100 italic leading-relaxed font-mono bg-slate-950/60 p-2.5 rounded-lg border border-indigo-900/50">
+                      "{aiResult.suggestedHint}"
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSendAiFix}
+                      className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                    >
+                      <span>⚡ Send AI Fix to Worker</span>
+                      <span className="text-[10px] opacity-80 font-normal">({student.name})</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* (c) Compiler Error if present */}

@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import ClusterBar from './components/ClusterBar';
 import StudentGrid from './components/StudentGrid';
 import CodeDrawer from './components/CodeDrawer';
+import { getGeminiApiKey, setGeminiApiKey, askSquadCopilotWithAI } from './utils/geminiAi';
 
 const BATCH_LABEL = 'RLHF-IND-101';
 
@@ -19,6 +20,12 @@ const INITIAL_ROOM_STATE = {
   }
 };
 
+const COPILOT_PRESETS = [
+  'Diagnose top rejection bottleneck',
+  'Spot subtle logic bugs in Wrong Answer',
+  'Draft an O(N) sliding-window rescue hint'
+];
+
 export default function App() {
   const [taskRateUsd, setTaskRateUsd] = useState(18.5);
   const [roomState, setRoomState] = useState(INITIAL_ROOM_STATE);
@@ -28,6 +35,13 @@ export default function App() {
   const [rescueFeed, setRescueFeed] = useState([]);
   const [connected, setConnected] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Gemini Squad Copilot State
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [copilotQuestion, setCopilotQuestion] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotResult, setCopilotResult] = useState(null);
 
   const socketRef = useRef(null);
   const prevStudentsRef = useRef(new Map());
@@ -120,6 +134,20 @@ export default function App() {
     }, 2500);
   };
 
+  const handleAskCopilot = async (query = copilotQuestion) => {
+    const q = query.trim();
+    if (!q) return;
+    setCopilotLoading(true);
+    try {
+      const res = await askSquadCopilotWithAI(q, roomState);
+      setCopilotResult(res);
+    } catch (err) {
+      console.error('Copilot query error:', err);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
   const handleExportCsv = () => {
     const students = roomState.students || [];
     const headers = [
@@ -190,6 +218,69 @@ export default function App() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
           </svg>
           <span className="text-base">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* API Key Modal */}
+      {apiKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <span>🔑</span> Gemini API Key Configuration
+              </h3>
+              <button
+                type="button"
+                onClick={() => setApiKeyModalOpen(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Paste your Google Gemini API key below to enable live <strong>Gemini 2.5 Flash</strong> code auditing and squad intelligence.
+              (Saved securely in your browser's localStorage for this session).
+            </p>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full rounded-xl bg-slate-950 border border-slate-700 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <div className="flex justify-between items-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setGeminiApiKey('');
+                  setApiKeyInput('');
+                  setApiKeyModalOpen(false);
+                }}
+                className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
+              >
+                Clear Key
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApiKeyModalOpen(false)}
+                  className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGeminiApiKey(apiKeyInput);
+                    setApiKeyModalOpen(false);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md cursor-pointer"
+                >
+                  Save Key
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -303,6 +394,143 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* ✨ Gemini Squad Copilot Interactive Bar */}
+      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-indigo-900/50 p-4 md:p-5 shadow-xl space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl">✨</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm md:text-base font-extrabold text-white tracking-tight">
+                  Gemini Squad Copilot
+                </h2>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 uppercase tracking-wider">
+                  2.5 FLASH TELEMETRY
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 hidden sm:block">
+                Real-time AI diagnostics & automated rescue dispatch across 25 live freelancer nodes
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setApiKeyInput(getGeminiApiKey());
+              setApiKeyModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 transition-all cursor-pointer shadow-sm self-start sm:self-auto"
+          >
+            <span>🔑</span>
+            <span>{getGeminiApiKey() ? 'API Key (Active)' : 'API Key'}</span>
+            {getGeminiApiKey() && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+          </button>
+        </div>
+
+        {/* Quick-Prompt Chips */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+            Quick Prompts:
+          </span>
+          {COPILOT_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              disabled={copilotLoading}
+              onClick={() => {
+                setCopilotQuestion(preset);
+                handleAskCopilot(preset);
+              }}
+              className="text-xs px-3 py-1 rounded-full bg-slate-800/90 hover:bg-indigo-950/80 text-slate-300 hover:text-indigo-200 border border-slate-700/80 hover:border-indigo-600 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+
+        {/* Question Input Form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAskCopilot();
+          }}
+          className="flex flex-col sm:flex-row gap-2 pt-0.5"
+        >
+          <input
+            type="text"
+            value={copilotQuestion}
+            onChange={(e) => setCopilotQuestion(e.target.value)}
+            placeholder="Ask Gemini anything about this live 25-worker batch..."
+            className="flex-1 rounded-xl bg-slate-950/90 border border-slate-800 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          <button
+            type="submit"
+            disabled={copilotLoading || !copilotQuestion.trim()}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 text-sm transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 shadow-md"
+          >
+            {copilotLoading ? (
+              <>
+                <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              'Ask Copilot'
+            )}
+          </button>
+        </form>
+
+        {/* Copilot Response Display */}
+        {copilotResult && (
+          <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-4 space-y-3 mt-2 shadow-inner">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Copilot Insight
+              </span>
+              <span
+                className={`text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                  copilotResult.mode === 'gemini-live'
+                    ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border-cyan-500/50'
+                    : 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'
+                }`}
+              >
+                {copilotResult.mode === 'gemini-live' ? 'GEMINI 2.5 FLASH LIVE' : 'LOCAL AST ENGINE'}
+              </span>
+            </div>
+
+            <p className="text-xs md:text-sm text-slate-200 leading-relaxed font-sans">
+              {copilotResult.answer}
+            </p>
+
+            {copilotResult.suggestedBroadcastHint && copilotResult.suggestedClusterTarget && (
+              <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                    Recommended Cluster Action (Target: {copilotResult.suggestedClusterTarget})
+                  </span>
+                  <p className="text-xs text-indigo-200 italic font-mono">
+                    "{copilotResult.suggestedBroadcastHint}"
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSendHint({
+                      targetClusterId: copilotResult.suggestedClusterTarget,
+                      targetStudentId: null,
+                      hintMessage: copilotResult.suggestedBroadcastHint
+                    });
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 cursor-pointer transition-all shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <span>⚡ Broadcast AI Hint to Cluster</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ClusterBar Component */}
       <ClusterBar
