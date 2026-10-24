@@ -1,5 +1,5 @@
 // DEMO: change USE_FAST_SOLUTION from 0 to 1 to swap to the O(N) solution
-#define USE_FAST_SOLUTION 1
+#define USE_FAST_SOLUTION 0
 
 #include <iostream>
 #include <vector>
